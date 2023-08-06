@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
-""" Module for trying out Babel i18n """
-from flask_babel import Babel, _
+"""Parametrizes templates
+"""
 from flask import Flask, render_template, request, g
+from flask_babel import Babel
+from typing import Dict
 import pytz
-from typing import Union
 
-app = Flask(__name__, template_folder='templates')
+
+class Config:
+    """configures available languages in our app"""
+    LANGUAGES = ["en", "fr"]
+    BABEL_DEFAULT_LOCALE = "en"
+    BABEL_DEFAULT_TIMEZONE = "UTC"
+
+
+app = Flask(__name__)
+app.config.from_object(Config)
 babel = Babel(app)
 
-
-class Config(object):
-    """ Configuration Class for Babel """
-
-    LANGUAGES = ['en', 'fr']
-    BABEL_DEFAULT_LOCALE = 'en'
-    BABEL_DEFAULT_TIMEZONE = 'UTC'
-
-
-app.config.from_object(Config)
 
 users = {
     1: {"name": "Balou", "locale": "fr", "timezone": "Europe/Paris"},
@@ -27,77 +27,65 @@ users = {
 }
 
 
-def get_user() -> Union[dict, None]:
-    """ Returns a user dictionary or
-    None if the ID cannot be found or
-    if login_as was not passed.
-    """
-
-    try:
-        login_as = request.args.get("login_as")
-        user = users[int(login_as)]
-    except Exception:
-        user = None
-
-    return user
-
-
-@app.before_request
-def before_request():
-    """ Operations that happen before any request """
-    user = get_user()
-    g.user = user
-
-
-@app.route('/', methods=['GET'], strict_slashes=False)
-def hello_world() -> str:
-    """Renders a Basic Template for Babel Implementation"""
+@app.route("/")
+def index() -> str:
+    """Defines homepage"""
     return render_template("7-index.html")
 
 
 @babel.localeselector
 def get_locale() -> str:
-    """Select a language translation to use for that request"""
-    locale = request.args.get("locale")
-    if locale and locale in app.config['LANGUAGES']:
-        return locale
+    """determines the best match with our supported languages"""
+    locale_url = request.args.get('locale')
+    if locale_url:
+        return locale_url
 
-    if g.user:
-        locale = g.user.get("locale")
-        if locale and locale in app.config['LANGUAGES']:
-            return locale
+    user_id = request.args.get('login_as')
+    if user_id:
+        locale_user = users.get(int(user_id)).get('locale')
+        if locale_user in app.config['LANGUAGES']:
+            return locale_user
 
-    locale = request.headers.get('locale')
-    if locale and locale in app.config['LANGUAGES']:
-        return locale
+    locale_headers = request.headers.get('locale')
+    if locale_headers:
+        return locale_headers
 
     return request.accept_languages.best_match(app.config['LANGUAGES'])
 
 
 @babel.timezoneselector
 def get_timezone() -> str:
-    """
-    1 Find timezone parameter in URL parameters
-    2 Find time zone from user settings
-    3 Default to UTC
-    """
+    """determines the best timezone"""
     try:
-        if request.args.get("timezone"):
-            timezone = request.args.get("timezone")
-            tz = pytz.timezone(timezone)
+        timezone_url = request.args.get('timezone')
+        if timezone_url:
+            return pytz.timezone(timezone_url)
 
-        elif g.user and g.user.get("timezone"):
-            timezone = g.user.get("timezone")
-            tz = pytz.timezone(timezone)
-        else:
-            timezone = app.config["BABEL_DEFAULT_TIMEZONE"]
-            tz = pytz.timezone(timezone)
-
+        user_id = request.args.get('login_as')
+        if user_id:
+            timezone_user = users.get(int(user_id)).get('timezone')
+            if timezone_user:
+                return pytz.timezone(timezone_user)
     except pytz.exceptions.UnknownTimeZoneError:
-        timezone = "UTC"
+        return app.config.get['BABEL_DEFAULT_TIMEZONE']
 
-    return timezone
+    return app.config.get['BABEL_DEFAULT_TIMEZONE']
+
+
+def get_user() -> Dict:
+    """returns a user dictionary or None if the ID cannot be found or if
+    login_as was not passed"""
+    user_id = request.args.get('login_as')
+    if user_id:
+        return users.get(int(user_id))
+    return None
+
+
+@app.before_request
+def before_request():
+    """uses get_user to find a user if any, and set it as a global"""
+    g.user = get_user()
 
 
 if __name__ == "__main__":
-    app.run()
+    app.run(debug=True)
